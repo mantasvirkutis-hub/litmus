@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Litmus · EM readiness console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#EEF1F3;
+    --surface:#FFFFFF;
+    --surface-2:#F6F8F9;
+    --ink:#14202B;
+    --muted:#5E6E7A;
+    --faint:#8A98A2;
+    --line:#DBE2E7;
+    --line-strong:#C6D0D6;
+    --go:#0E8C7A;        /* readiness / done */
+    --go-soft:#D5EBE6;
+    --signal:#E1913A;    /* streak / wins */
+    --signal-soft:#F8E9D2;
+    --danger:#C0483B;
+    --focus:#0E8C7A;
+    --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    --display:'Space Grotesk',var(--sans);
+    --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+    --radius:14px;
+    --shadow:0 1px 2px rgba(20,32,43,.05),0 8px 24px rgba(20,32,43,.06);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--sans);
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    padding:28px 20px 80px;
+  }
+  .wrap{max-width:860px;margin:0 auto}
+
+  /* ---------- console header ---------- */
+  .eyebrow{
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--faint);
+    margin:0 0 10px;
+  }
+  .console{
+    background:var(--ink);
+    color:#fff;
+    border-radius:var(--radius);
+    padding:26px 26px 24px;
+    box-shadow:var(--shadow);
+    position:relative;
+    overflow:hidden;
+  }
+  .console .eyebrow{color:rgba(255,255,255,.5);margin-bottom:14px}
+  .console h1{
+    font-family:var(--display);
+    font-weight:600;
+    font-size:26px;
+    line-height:1.1;
+    margin:0 0 20px;
+    letter-spacing:-.01em;
+  }
+  .meter-row{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;flex-wrap:wrap}
+  .readiness-label{font-family:var(--mono);font-size:12px;letter-spacing:.08em;color:rgba(255,255,255,.55);text-transform:uppercase}
+  .readiness-status{font-family:var(--display);font-weight:600;font-size:19px;margin-top:2px;color:#fff}
+  .readiness-pct{font-family:var(--display);font-weight:700;font-size:44px;line-height:1;color:var(--go);letter-spacing:-.02em}
+  .readiness-pct span{font-size:20px;color:rgba(255,255,255,.5);font-weight:500}
+  .bar{
+    margin-top:16px;height:10px;border-radius:20px;
+    background:rgba(255,255,255,.12);overflow:hidden;
+  }
+  .bar>i{
+    display:block;height:100%;width:0%;
+    background:linear-gradient(90deg,#0E8C7A,#37B79F);
+    border-radius:20px;transition:width .6s cubic-bezier(.2,.8,.2,1);
+  }
+  .console-foot{display:flex;gap:22px;margin-top:20px;flex-wrap:wrap;align-items:center}
+  .stat{font-family:var(--mono);font-size:12px;color:rgba(255,255,255,.6)}
+  .stat b{color:#fff;font-size:15px;font-weight:600}
+  .streak b{color:var(--signal)}
+
+  .cta{
+    margin-left:auto;
+    font-family:var(--display);font-weight:600;font-size:14px;
+    background:var(--go);color:#fff;border:0;border-radius:10px;
+    padding:11px 16px;cursor:pointer;transition:transform .12s ease,background .15s ease;
+  }
+  .cta:hover{background:#0fa088}
+  .cta:active{transform:translateY(1px)}
+
+  /* ---------- pinned reminder ---------- */
+  .pin{
+    background:var(--signal-soft);
+    border:1px solid #EED9B6;
+    border-radius:12px;
+    padding:14px 16px;
+    margin:18px 0 26px;
+    font-size:14px;color:#7a5416;
+    display:flex;gap:11px;align-items:flex-start;
+  }
+  .pin .k{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;background:#E1913A;color:#fff;border-radius:5px;padding:3px 7px;flex:0 0 auto;margin-top:1px}
+  .pin b{color:#5f3f0d}
+
+  /* ---------- areas ---------- */
+  .area{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    margin-bottom:14px;
+    overflow:hidden;
+    box-shadow:0 1px 2px rgba(20,32,43,.03);
+  }
+  .area-head{
+    display:flex;align-items:center;gap:14px;
+    padding:16px 18px;cursor:pointer;user-select:none;
+    background:var(--surface);
+  }
+  .area-head:hover{background:var(--surface-2)}
+  .area-num{
+    font-family:var(--mono);font-size:12px;font-weight:600;
+    color:var(--faint);flex:0 0 auto;width:22px;
+  }
+  .area-title{font-family:var(--display);font-weight:600;font-size:16.5px;flex:1;letter-spacing:-.005em}
+  .area-title .tag{display:block;font-family:var(--sans);font-weight:450;font-size:12.5px;color:var(--muted);margin-top:2px;letter-spacing:0}
+  .area-prog{font-family:var(--mono);font-size:12px;color:var(--muted);flex:0 0 auto;white-space:nowrap}
+  .area-prog b{color:var(--go)}
+  .mini-bar{width:64px;height:6px;border-radius:10px;background:var(--line);overflow:hidden;flex:0 0 auto}
+  .mini-bar>i{display:block;height:100%;width:0;background:var(--go);border-radius:10px;transition:width .5s ease}
+  .chev{flex:0 0 auto;color:var(--faint);transition:transform .25s ease;font-size:13px}
+  .area.open .chev{transform:rotate(90deg)}
+
+  .cards{display:none;padding:2px 14px 14px}
+  .area.open .cards{display:block}
+
+  /* ---------- concept card ---------- */
+  .card{
+    border:1px solid var(--line);
+    border-radius:11px;
+    padding:14px 15px;
+    margin:8px 4px;
+    background:var(--surface);
+    transition:border-color .2s ease,background .2s ease,opacity .2s ease;
+  }
+  .card.done{background:var(--go-soft);border-color:#B7DED6}
+  .card-top{display:flex;gap:12px;align-items:flex-start}
+  .check{
+    flex:0 0 auto;width:24px;height:24px;border-radius:7px;
+    border:2px solid var(--line-strong);background:#fff;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;margin-top:1px;
+    transition:background .18s ease,border-color .18s ease,transform .1s ease;
+  }
+  .check:hover{border-color:var(--go)}
+  .check:active{transform:scale(.9)}
+  .check svg{width:14px;height:14px;stroke:#fff;stroke-width:3.4;fill:none;opacity:0;transition:opacity .15s ease}
+  .card.done .check{background:var(--go);border-color:var(--go)}
+  .card.done .check svg{opacity:1}
+  .card.pop .check{animation:pop .32s ease}
+  @keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.28)}100%{transform:scale(1)}}
+
+  .card-main{flex:1;min-width:0}
+  .card-eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin-bottom:3px}
+  .card-title{font-family:var(--display);font-weight:600;font-size:15px;letter-spacing:-.005em;cursor:pointer}
+  .card.done .card-title{color:#0c6a5c}
+  .card-detail{display:none;margin-top:11px}
+  .card.expanded .card-detail{display:block}
+  .row{display:flex;gap:9px;margin:9px 0;font-size:13.5px;align-items:flex-start}
+  .row .lab{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#fff;border-radius:5px;padding:3px 6px;flex:0 0 auto;margin-top:1px;line-height:1.3}
+  .lab.why{background:#5E6E7A}
+  .lab.teach{background:#0E8C7A}
+  .lab.do{background:#E1913A}
+  .row p{margin:0;color:var(--ink)}
+  .note{
+    width:100%;margin-top:8px;border:1px solid var(--line);border-radius:8px;
+    padding:8px 10px;font-family:var(--sans);font-size:13px;color:var(--ink);
+    background:var(--surface-2);resize:vertical;min-height:38px;
+  }
+  .note::placeholder{color:var(--faint)}
+  .note:focus{outline:none;border-color:var(--go);background:#fff}
+
+  /* ---------- team questions ---------- */
+  .panel{
+    background:var(--surface);border:1px solid var(--line);
+    border-radius:var(--radius);padding:20px;margin-top:26px;box-shadow:0 1px 2px rgba(20,32,43,.03);
+  }
+  .panel h2{font-family:var(--display);font-weight:600;font-size:17px;margin:0 0 4px}
+  .panel .sub{font-size:13px;color:var(--muted);margin:0 0 14px}
+  .q-input{display:flex;gap:8px}
+  .q-input input{
+    flex:1;border:1px solid var(--line);border-radius:9px;padding:10px 12px;
+    font-family:var(--sans);font-size:14px;color:var(--ink);background:var(--surface-2);
+  }
+  .q-input input:focus{outline:none;border-color:var(--go);background:#fff}
+  .q-add{font-family:var(--display);font-weight:600;font-size:14px;background:var(--ink);color:#fff;border:0;border-radius:9px;padding:0 16px;cursor:pointer}
+  .q-add:hover{background:#20303d}
+  .q-list{list-style:none;margin:14px 0 0;padding:0}
+  .q-list li{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line);font-size:14px}
+  .q-list li:first-child{border-top:0}
+  .q-dot{color:var(--signal);font-family:var(--mono);flex:0 0 auto;margin-top:1px}
+  .q-text{flex:1}
+  .q-del{background:none;border:0;color:var(--faint);cursor:pointer;font-size:16px;line-height:1;padding:2px 4px;flex:0 0 auto}
+  .q-del:hover{color:var(--danger)}
+  .q-empty{color:var(--faint);font-size:13.5px;font-style:italic;margin-top:12px}
+
+  /* ---------- footer utils ---------- */
+  .utils{display:flex;gap:12px;justify-content:center;margin-top:34px;flex-wrap:wrap}
+  .util{font-family:var(--mono);font-size:12px;background:none;border:1px solid var(--line-strong);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer}
+  .util:hover{border-color:var(--muted);color:var(--ink)}
+  .util.danger:hover{border-color:var(--danger);color:var(--danger)}
+  .sig{text-align:center;font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:18px;letter-spacing:.04em}
+
+  :focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:4px}
+
+  @media (max-width:560px){
+    body{padding:18px 12px 70px}
+    .console h1{font-size:22px}
+    .readiness-pct{font-size:36px}
+    .cta{margin-left:0;width:100%;margin-top:6px}
+    .area-prog .txt{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{transition:none!important;animation:none!important}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="console">
+    <p class="eyebrow">Engineering Manager · Dynamics NAV / Business Central</p>
+    <h1>Litmus</h1>
+    <div class="meter-row">
+      <div>
+        <div class="readiness-label">Readiness</div>
+        <div class="readiness-status" id="statusText">Fresh off the boat</div>
+      </div>
+      <div class="readiness-pct" id="pctText">0<span>%</span></div>
+    </div>
+    <div class="bar"><i id="bigBar"></i></div>
+    <div class="console-foot">
+      <div class="stat"><b id="doneCount">0</b> / <span id="totalCount">0</span> concepts</div>
+      <div class="stat streak">streak <b id="streakCount">0</b>🔥</div>
+      <button class="cta" id="oneThing">Give me one thing · 15 min</button>
+    </div>
+  </div>
+
+  <div class="pin">
+    <span class="k">Rule&nbsp;0</span>
+    <div>Your real curriculum is <b>your team</b>. Every "Do this" below is a question you ask a real engineer — asking it well <b>is the job</b>, not a detour from it. Don't bluff; get curious.</div>
+  </div>
+
+  <div id="areas"></div>
+
+  <div class="panel">
+    <h2>Questions for my engineers</h2>
+    <p class="sub">Brain full? Dump it here so you stop holding it. Bring these to your 1-on-1s.</p>
+    <div class="q-input">
+      <input id="qInput" type="text" placeholder="e.g. How much of our codebase is still C/AL?" aria-label="New question for the team">
+      <button class="q-add" id="qAdd">Add</button>
+    </div>
+    <ul class="q-list" id="qList"></ul>
+    <p class="q-empty" id="qEmpty">Nothing parked yet.</p>
+  </div>
+
+  <div class="utils">
+    <button class="util" id="expandAll">Expand all</button>
+    <button class="util" id="exportBtn">Export progress (.json)</button>
+    <button class="util danger" id="resetBtn">Reset everything</button>
+  </div>
+  <p class="sig">Runs offline · saved in this browser · built to be checked off, not admired</p>
+
+</div>
+
+<script>
+/* =====================================================================
+   THE CURRICULUM — anchored to the real BC/NAV EM role.
+   Edit freely: add/remove concepts, tweak text. Structure is stable.
+   Each concept: { id, t:title, why, teach, do, est }
+   ===================================================================== */
+const AREAS = [
+  {
+    n:"01", title:"ERP & Business Central, the ground you stand on",
+    tag:"The domain map everything else hangs off",
+    items:[
+      {id:"a1c1", t:"What an ERP actually is", est:"15 min",
+       why:"Your whole team builds one integrated system of record. Misread this and every architecture chat is fog.",
+       teach:"Explain ERP vs a normal app in two sentences.",
+       do:"Ask an engineer to walk you through one full business flow end to end — a pharmacy order to invoice."},
+      {id:"a1c2", t:"Posting, ledgers & transactions", est:"20 min",
+       why:"'Posting' is the heartbeat of ERP — where money and stock actually move, and where bugs get expensive.",
+       teach:"Explain what 'posting an entry' means in plain words.",
+       do:"Find one recent incident that involved posting and understand what broke."},
+      {id:"a1c3", t:"Base app vs your customizations", est:"15 min",
+       why:"BC ships a huge standard app; your team's value is what it layers on top. Frames every build-vs-configure call.",
+       teach:"Explain 'don't touch the base app' and why it matters.",
+       do:"Ask what rough % of your product is standard BC vs custom."},
+      {id:"a1c4", t:"Your domain: pharmacy, supply chain, finance", est:"20 min",
+       why:"You can't lead product ownership without knowing the business the software runs.",
+       teach:"Name the three most critical business processes your system supports.",
+       do:"Get a stakeholder to explain what breaks in a pharmacy if the system is down for an hour."}
+    ]
+  },
+  {
+    n:"02", title:"C/AL → AL: the modernization you're steering",
+    tag:"The technical centrepiece of this whole job",
+    items:[
+      {id:"a2c1", t:"C/AL: the legacy world", est:"15 min",
+       why:"Half your tech-debt conversations are about C/AL — old language, objects living in the database, Object Designer.",
+       teach:"Explain why C/AL code is hard to upgrade.",
+       do:"Ask how much of your codebase is still C/AL."},
+      {id:"a2c2", t:"AL + extensions: the modern model", est:"20 min",
+       why:"This is the direction you're leading toward — apps that layer on top, VS Code, source control.",
+       teach:"Explain 'extension' vs 'modifying the base'.",
+       do:"Have someone show you one AL extension open in VS Code."},
+      {id:"a2c3", t:"Why the migration matters", est:"15 min",
+       why:"Upgradeability, cloud/SaaS BC, less debt. This is your technical roadmap compressed into one idea.",
+       teach:"Pitch the business case for C/AL→AL to a non-technical stakeholder.",
+       do:"Sketch where your team currently sits on the C/AL→AL journey."},
+      {id:"a2c4", t:"The question you'll ask constantly: extend or customize?", est:"15 min",
+       why:"This single judgment call is what separates clean work from future debt.",
+       teach:"Explain when you'd push back on a deep customization.",
+       do:"Sit in on one architecture discussion and just listen for this tension."}
+    ]
+  },
+  {
+    n:"03", title:"Testing & quality culture",
+    tag:"Your home turf, dressed as tech",
+    items:[
+      {id:"a3c1", t:"AL test codeunits", est:"15 min",
+       why:"The native way testing is done here — and listed as an advantage in your own job spec.",
+       teach:"Explain what an automated test actually buys the team.",
+       do:"Ask to see one existing test and what it checks."},
+      {id:"a3c2", t:"'Engineers test their own code' is a culture shift", est:"20 min",
+       why:"This is literally your mandate — and you've led exactly this before (UAT at WU, SLAs at Swedbank).",
+       teach:"Explain why owning your own tests changes how people build.",
+       do:"Find out who tests what today, and where the ownership gap is."},
+      {id:"a3c3", t:"Test automation ROI", est:"15 min",
+       why:"You'll have to defend the time cost to stakeholders who see tests as 'slow'.",
+       teach:"Explain why tests that are slow to write still pay back.",
+       do:"Identify one painful manual-test area worth automating first."},
+      {id:"a3c4", t:"What 'good' looks like: tests that run on every change", est:"15 min",
+       why:"Judgment on whether quality is real or theatre.",
+       teach:"Explain the gap between 'we have tests' and 'tests run automatically'.",
+       do:"Find out if tests run on every change today, or only when someone remembers."}
+    ]
+  },
+  {
+    n:"04", title:"Delivery pipeline & DevOps for BC",
+    tag:"How your product actually ships",
+    items:[
+      {id:"a4c1", t:"Git & code review, the mechanics", est:"20 min",
+       why:"You know these socially — learn them mechanically so PRs and estimates stop being a black box.",
+       teach:"Explain branch → PR → review → merge.",
+       do:"Read one real pull request in your repo from start to finish."},
+      {id:"a4c2", t:"Docker-based BC development", est:"15 min",
+       why:"Containers give clean, reproducible dev environments — listed as an advantage for the role.",
+       teach:"Explain why 'works on my machine' dies once you use containers.",
+       do:"Ask an engineer to show their local BC container spinning up."},
+      {id:"a4c3", t:"CI/CD for AL extensions", est:"20 min",
+       why:"This is where release discipline lives — the path from merged code to a shipped product.",
+       teach:"Explain what happens between 'merged' and 'live'.",
+       do:"Map your current path from code to production."},
+      {id:"a4c4", t:"Sandbox → production release discipline", est:"15 min",
+       why:"In pharmacy supply chain a bad release has real-world stakes. This is risk you own.",
+       teach:"Explain why you don't deploy straight to prod.",
+       do:"Learn your rollback story — what happens when a release breaks at 2am."}
+    ]
+  },
+  {
+    n:"05", title:"Software judgment, ERP-flavoured",
+    tag:"The don't-get-snowed core",
+    items:[
+      {id:"a5c1", t:"Data & migrations: the scary changes", est:"20 min",
+       why:"In ERP, data changes are the highest-risk work. 'Just add a field' is never free.",
+       teach:"Explain why a data migration is riskier than a UI tweak.",
+       do:"Ask about the last migration that went sideways."},
+      {id:"a5c2", t:"Tech debt: real vs excuse", est:"15 min",
+       why:"Your single most valuable judgment skill — telling genuine debt from 'I don't feel like it'.",
+       teach:"Explain how you'd tell the two apart.",
+       do:"Ask three engineers what the worst debt is — look for the overlap."},
+      {id:"a5c3", t:"Monitoring & observability", est:"15 min",
+       why:"Listed explicitly in your spec. It's how you know the system's healthy without asking anyone.",
+       teach:"Explain the difference between monitoring and observability.",
+       do:"Find out what you'd see first if the system broke tonight."},
+      {id:"a5c4", t:"Estimates & why they lie", est:"15 min",
+       why:"You're accountable for timelines — understand what makes estimates wrong before you defend them.",
+       teach:"Explain why 'it's a small change' is a dangerous phrase.",
+       do:"Compare one recent estimate to what actually happened, and why."}
+    ]
+  },
+  {
+    n:"06", title:"AI & the forward view",
+    tag:"You're a technology products leader now",
+    items:[
+      {id:"a6c1", t:"Copilot in Business Central", est:"15 min",
+       why:"Microsoft is pushing AI into BC. Know what's real so you're not sold hype.",
+       teach:"Explain one thing BC Copilot actually does today.",
+       do:"Find one place AI could realistically help your team."},
+      {id:"a6c2", t:"LLM literacy: can vs can't", est:"15 min",
+       why:"Don't get snowed by AI hype any more than by tech debt.",
+       teach:"Explain in one line what an LLM is genuinely bad at.",
+       do:"Name one task on your team you would NOT hand to AI yet."},
+      {id:"a6c3", t:"AI in the dev workflow", est:"15 min",
+       why:"Your engineers may already use it. Lead that conversation instead of dodging it.",
+       teach:"Explain one sensible guardrail for AI-written code.",
+       do:"Ask your team how they're already using AI — no judgment, just map it."}
+    ]
+  }
+];
+
+const STATUS_TIERS = [
+  [0,   "Fresh off the boat"],
+  [1,   "Starting to see the shape"],
+  [21,  "Catching the tells"],
+  [41,  "Asking dangerous questions"],
+  [61,  "Quietly dangerous"],
+  [81,  "They can't fool you"],
+  [100, "Litmus-clear 🧪"]
+];
+
+/* ---------- state ---------- */
+const KEY = "litmus.v1";
+let state = load();
+function load(){
+  try{ return JSON.parse(localStorage.getItem(KEY)) || fresh(); }
+  catch(e){ return fresh(); }
+}
+function fresh(){ return {done:{}, notes:{}, questions:[], streakDays:[], lastDay:null}; }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} }
+
+const ALL = AREAS.flatMap(a=>a.items);
+const TOTAL = ALL.length;
+
+/* ---------- streak ---------- */
+function today(){ return new Date().toISOString().slice(0,10); }
+function bumpStreak(){
+  const t = today();
+  if(state.lastDay === t) return;
+  const y = new Date(Date.now()-864e5).toISOString().slice(0,10);
+  state.streak = (state.lastDay === y) ? (state.streak||0)+1 : 1;
+  state.lastDay = t;
+}
+
+/* ---------- render ---------- */
+const areasEl = document.getElementById('areas');
+function render(){
+  areasEl.innerHTML = '';
+  AREAS.forEach(area=>{
+    const doneN = area.items.filter(i=>state.done[i.id]).length;
+    const pct = Math.round(doneN/area.items.length*100);
+    const el = document.createElement('div');
+    el.className = 'area' + (area._open ? ' open':'');
+    el.innerHTML = `
+      <div class="area-head" role="button" tabindex="0" aria-expanded="${!!area._open}">
+        <span class="area-num">${area.n}</span>
+        <div class="area-title">${area.title}<span class="tag">${area.tag}</span></div>
+        <span class="area-prog"><span class="txt"><b>${doneN}</b>/${area.items.length}&nbsp;</span></span>
+        <span class="mini-bar"><i style="width:${pct}%"></i></span>
+        <span class="chev">▶</span>
+      </div>
+      <div class="cards"></div>`;
+    const head = el.querySelector('.area-head');
+    const toggle = ()=>{ area._open = !area._open; el.classList.toggle('open'); head.setAttribute('aria-expanded', !!area._open); };
+    head.addEventListener('click', toggle);
+    head.addEventListener('keydown', e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggle(); }});
+
+    const cards = el.querySelector('.cards');
+    area.items.forEach(it=> cards.appendChild(makeCard(it, area)));
+    areasEl.appendChild(el);
+  });
+  updateTop();
+}
+
+function makeCard(it, area){
+  const c = document.createElement('div');
+  c.className = 'card' + (state.done[it.id]?' done':'');
+  c.id = 'card-'+it.id;
+  c.innerHTML = `
+    <div class="card-top">
+      <div class="check" role="checkbox" tabindex="0" aria-checked="${!!state.done[it.id]}" aria-label="Mark '${it.t}' done">
+        <svg viewBox="0 0 24 24"><polyline points="4,12 10,18 20,6"></polyline></svg>
+      </div>
+      <div class="card-main">
+        <div class="card-eyebrow">${area.n} · ${it.est}</div>
+        <div class="card-title">${it.t}</div>
+        <div class="card-detail">
+          <div class="row"><span class="lab why">Why</span><p>${it.why}</p></div>
+          <div class="row"><span class="lab teach">Teach&nbsp;back</span><p>${it.teach}</p></div>
+          <div class="row"><span class="lab do">Do&nbsp;this</span><p>${it.do}</p></div>
+          <textarea class="note" placeholder="Your one-line explanation, or a question this raised…">${(state.notes[it.id]||'').replace(/</g,'&lt;')}</textarea>
+        </div>
+      </div>
+    </div>`;
+
+  const card = c;
+  const check = c.querySelector('.check');
+  const title = c.querySelector('.card-title');
+  const note = c.querySelector('.note');
+
+  const toggleDone = ()=>{
+    const now = !state.done[it.id];
+    state.done[it.id] = now;
+    check.setAttribute('aria-checked', now);
+    card.classList.toggle('done', now);
+    if(now){ card.classList.add('pop'); setTimeout(()=>card.classList.remove('pop'),340); bumpStreak(); }
+    save(); updateTop(); updateAreaBars();
+  };
+  check.addEventListener('click', e=>{ e.stopPropagation(); toggleDone(); });
+  check.addEventListener('keydown', e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggleDone(); }});
+
+  const expand = ()=> card.classList.toggle('expanded');
+  title.addEventListener('click', expand);
+
+  note.addEventListener('input', ()=>{ state.notes[it.id] = note.value; save(); });
+  note.addEventListener('click', e=>e.stopPropagation());
+  return c;
+}
+
+function updateAreaBars(){
+  document.querySelectorAll('.area').forEach((el,idx)=>{
+    const area = AREAS[idx];
+    const doneN = area.items.filter(i=>state.done[i.id]).length;
+    const pct = Math.round(doneN/area.items.length*100);
+    el.querySelector('.mini-bar>i').style.width = pct+'%';
+    const prog = el.querySelector('.area-prog .txt');
+    if(prog) prog.innerHTML = `<b>${doneN}</b>/${area.items.length}&nbsp;`;
+  });
+}
+
+function updateTop(){
+  const doneN = ALL.filter(i=>state.done[i.id]).length;
+  const pct = Math.round(doneN/TOTAL*100);
+  document.getElementById('bigBar').style.width = pct+'%';
+  document.getElementById('pctText').innerHTML = pct+'<span>%</span>';
+  document.getElementById('doneCount').textContent = doneN;
+  document.getElementById('totalCount').textContent = TOTAL;
+  document.getElementById('streakCount').textContent = state.streak||0;
+  let label = STATUS_TIERS[0][1];
+  for(const [th,txt] of STATUS_TIERS){ if(pct>=th) label = txt; }
+  document.getElementById('statusText').textContent = label;
+}
+
+/* ---------- give me one thing ---------- */
+document.getElementById('oneThing').addEventListener('click', ()=>{
+  const undone = ALL.filter(i=>!state.done[i.id]);
+  if(!undone.length){ alert("You've done them all. Go run your team. 🎉"); return; }
+  const pick = undone[Math.floor(Math.random()*undone.length)];
+  const area = AREAS.find(a=>a.items.includes(pick));
+  area._open = true;
+  render();
+  const card = document.getElementById('card-'+pick.id);
+  card.classList.add('expanded');
+  card.scrollIntoView({behavior:'smooth', block:'center'});
+  const prevBg = card.style.boxShadow;
+  card.style.boxShadow = '0 0 0 3px var(--signal)';
+  setTimeout(()=>{ card.style.boxShadow = prevBg; }, 1400);
+});
+
+/* ---------- team questions ---------- */
+const qList = document.getElementById('qList');
+const qInput = document.getElementById('qInput');
+const qEmpty = document.getElementById('qEmpty');
+function renderQ(){
+  qList.innerHTML='';
+  qEmpty.style.display = state.questions.length ? 'none':'block';
+  state.questions.forEach((q,i)=>{
+    const li=document.createElement('li');
+    li.innerHTML = `<span class="q-dot">→</span><span class="q-text"></span><button class="q-del" aria-label="Delete question">×</button>`;
+    li.querySelector('.q-text').textContent = q;
+    li.querySelector('.q-del').addEventListener('click', ()=>{ state.questions.splice(i,1); save(); renderQ(); });
+    qList.appendChild(li);
+  });
+}
+function addQ(){ const v=qInput.value.trim(); if(!v) return; state.questions.push(v); qInput.value=''; save(); renderQ(); }
+document.getElementById('qAdd').addEventListener('click', addQ);
+qInput.addEventListener('keydown', e=>{ if(e.key==='Enter') addQ(); });
+
+/* ---------- utils ---------- */
+document.getElementById('expandAll').addEventListener('click', function(){
+  const anyClosed = AREAS.some(a=>!a._open);
+  AREAS.forEach(a=>a._open = anyClosed);
+  render();
+  this.textContent = anyClosed ? 'Collapse all' : 'Expand all';
+});
+document.getElementById('exportBtn').addEventListener('click', ()=>{
+  const blob = new Blob([JSON.stringify(state,null,2)], {type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='litmus-progress-'+today()+'.json';
+  a.click();
+});
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+  if(confirm('Wipe all progress, notes and questions? This can\'t be undone.')){
+    state = fresh(); save(); render(); renderQ();
+  }
+});
+
+/* ---------- go ---------- */
+render();
+renderQ();
+</script>
+</body>
+</html>
