@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
     --paper:#EEF1F3;
@@ -216,6 +217,23 @@
   .util.danger:hover{border-color:var(--danger);color:var(--danger)}
   .sig{text-align:center;font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:18px;letter-spacing:.04em}
 
+  /* ---------- sync bar ---------- */
+  .syncbar{
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    background:var(--surface);border:1px solid var(--line);
+    border-radius:12px;padding:10px 14px;margin:0 0 16px;
+    box-shadow:0 1px 2px rgba(20,32,43,.03);
+  }
+  .sync-status{font-family:var(--mono);font-size:12px;letter-spacing:.02em}
+  .sync-status.off{color:var(--signal)}
+  .sync-status.on{color:var(--go)}
+  .sync-status.pending{color:var(--muted)}
+  .sync-actions{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .sync-input{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-family:var(--sans);font-size:13px;background:var(--surface-2);color:var(--ink);min-width:180px}
+  .sync-input:focus{outline:none;border-color:var(--go);background:#fff}
+  .sync-btn{font-family:var(--display);font-weight:600;font-size:13px;background:var(--ink);color:#fff;border:0;border-radius:8px;padding:8px 14px;cursor:pointer}
+  .sync-btn:hover{background:#20303d}
+
   :focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:4px}
 
   @media (max-width:560px){
@@ -232,6 +250,11 @@
 </head>
 <body>
 <div class="wrap">
+
+  <div class="syncbar" id="syncBar">
+    <span class="sync-status off" id="syncStatus">⚠ Local only — not syncing</span>
+    <div class="sync-actions" id="syncActions"></div>
+  </div>
 
   <div class="console">
     <p class="eyebrow">Engineering Manager · Dynamics NAV / Business Central</p>
@@ -433,7 +456,7 @@ function load(){
   catch(e){ return fresh(); }
 }
 function fresh(){ return {done:{}, notes:{}, questions:[], streakDays:[], lastDay:null}; }
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} queueCloudSave(); }
 
 const ALL = AREAS.flatMap(a=>a.items);
 const TOTAL = ALL.length;
@@ -602,9 +625,105 @@ document.getElementById('resetBtn').addEventListener('click', ()=>{
   }
 });
 
+/* ---------- cloud sync (Supabase) ---------- */
+const SUPABASE_URL = "https://utbfqardfinwzdeokqij.supabase.co";
+const SUPABASE_KEY = "sb_publishable_IXFR_8i-YJ_L5xa6NQcg-A_a-km10K-";
+let sb = null;
+try{
+  if(window.supabase && window.supabase.createClient){
+    sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  }
+}catch(e){ console.warn('Supabase failed to load — running local-only', e); }
+
+let currentUser = null;
+let cloudSaveTimer = null;
+
+function setSyncUI(){
+  const status = document.getElementById('syncStatus');
+  const actions = document.getElementById('syncActions');
+  if(!status || !actions) return;
+  if(!sb){
+    status.textContent = '⚠ Local only — sync unavailable';
+    status.className = 'sync-status off';
+    actions.innerHTML = '';
+    return;
+  }
+  if(currentUser){
+    status.textContent = '✓ Synced · ' + currentUser.email;
+    status.className = 'sync-status on';
+    actions.innerHTML = '<button class="sync-btn" id="syncSignOut">Sign out</button>';
+    document.getElementById('syncSignOut').addEventListener('click', signOut);
+  } else {
+    status.textContent = '⚠ Local only — not syncing';
+    status.className = 'sync-status off';
+    actions.innerHTML = '<input id="syncEmail" class="sync-input" type="email" placeholder="you@email.com" autocomplete="email"><button class="sync-btn" id="syncSignIn">Sign in to sync</button>';
+    document.getElementById('syncSignIn').addEventListener('click', sendLink);
+    const inp = document.getElementById('syncEmail');
+    if(inp) inp.addEventListener('keydown', e=>{ if(e.key==='Enter') sendLink(); });
+  }
+}
+
+async function sendLink(){
+  if(!sb) return;
+  const emailEl = document.getElementById('syncEmail');
+  const status = document.getElementById('syncStatus');
+  const email = ((emailEl && emailEl.value) || '').trim();
+  if(!email){ if(emailEl) emailEl.focus(); return; }
+  status.className = 'sync-status pending';
+  status.textContent = 'Sending link…';
+  const { error } = await sb.auth.signInWithOtp({
+    email,
+    options:{ emailRedirectTo: window.location.origin + window.location.pathname }
+  });
+  if(error){ status.className='sync-status off'; status.textContent = '✕ ' + error.message; setSyncUI(); }
+  else {
+    status.className = 'sync-status pending';
+    status.textContent = '📧 Check your email — open the link on THIS device';
+    const actions = document.getElementById('syncActions'); if(actions) actions.innerHTML = '';
+  }
+}
+
+async function signOut(){ if(sb) await sb.auth.signOut(); }
+
+async function cloudLoad(){
+  if(!sb || !currentUser) return;
+  const { data, error } = await sb.from('progress').select('state').eq('user_id', currentUser.id).maybeSingle();
+  if(error){ console.warn('cloud load failed', error); return; }
+  if(data && data.state){
+    state = Object.assign(fresh(), data.state);
+    try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){}
+    render(); renderQ();
+  } else {
+    queueCloudSave(true); // no cloud row yet: seed it from local
+  }
+}
+
+function queueCloudSave(immediate){
+  if(!sb || !currentUser) return;
+  clearTimeout(cloudSaveTimer);
+  const push = async ()=>{
+    const { error } = await sb.from('progress').upsert({
+      user_id: currentUser.id,
+      state: state,
+      updated_at: new Date().toISOString()
+    });
+    if(error) console.warn('cloud save failed', error);
+  };
+  if(immediate) push(); else cloudSaveTimer = setTimeout(push, 800);
+}
+
+if(sb){
+  sb.auth.onAuthStateChange((_event, session)=>{
+    currentUser = session ? session.user : null;
+    setSyncUI();
+    if(currentUser) cloudLoad();
+  });
+}
+
 /* ---------- go ---------- */
 render();
 renderQ();
+setSyncUI();
 </script>
 </body>
 </html>
